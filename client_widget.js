@@ -69,13 +69,13 @@
     const sec = parseInt(seconds, 10);
     if (isNaN(sec)) return "";
     const diff = sec - Math.floor(Date.now() / 1000);
-    if (diff <= 0) return "即将重置";
+    if (diff <= 0) return "重置中";
     const days = Math.floor(diff / 86400);
     const hours = Math.floor((diff % 86400) / 3600);
     const mins = Math.floor((diff % 3600) / 60);
-    if (days > 0) return `${days}天 ${hours}小时`;
-    if (hours > 0) return `${hours}小时 ${mins}分`;
-    return `${mins}分钟`;
+    if (days > 0) return `${days}d${hours}h`;
+    if (hours > 0) return `${hours}h${mins}m`;
+    return `${mins}m`;
   }
 
   async function fetchOfficialQuotas() {
@@ -142,11 +142,11 @@
     }
 
     container.style.cssText = [
-      isCollapsed ? "padding: 7px 10px" : "padding: 10px 11px",
-      "margin: 4px 8px 8px 8px",
-      "border-radius: 10px",
-      "background: rgba(255, 255, 255, 0.035)",
-      "border: 1px solid rgba(255, 255, 255, 0.08)",
+      isCollapsed ? "padding: 5px 8px" : "padding: 7px 9px 8px 9px",
+      "margin: 2px 6px 4px 6px",
+      "border-radius: 8px",
+      "background: rgba(255, 255, 255, 0.03)",
+      "border: 1px solid rgba(255, 255, 255, 0.07)",
       "backdrop-filter: blur(12px)",
       "-webkit-backdrop-filter: blur(12px)",
       "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', sans-serif",
@@ -154,7 +154,7 @@
       "user-select: none",
       "cursor: pointer",
       "transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease",
-      "box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12)"
+      "box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1)"
     ].join("; ");
 
     container.onmouseenter = () => {
@@ -163,9 +163,9 @@
       container.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.22)";
     };
     container.onmouseleave = () => {
-      container.style.borderColor = "rgba(255, 255, 255, 0.08)";
-      container.style.background = "rgba(255, 255, 255, 0.035)";
-      container.style.boxShadow = "0 2px 6px rgba(0, 0, 0, 0.12)";
+      container.style.borderColor = "rgba(255, 255, 255, 0.07)";
+      container.style.background = "rgba(255, 255, 255, 0.03)";
+      container.style.boxShadow = "0 1px 4px rgba(0, 0, 0, 0.1)";
     };
 
     // Toggle expand/collapse on click (固定中文，点击纯粹负责伸缩)
@@ -242,16 +242,17 @@
     // Render Compact (Collapsed) View
     if (isCollapsed) {
       container.innerHTML = `
-        <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
-          <div style="display: flex; align-items: center; gap: 5.5px; min-width: 0; flex: 1;">
-            <span style="display: inline-block; width: 6.5px; height: 6.5px; border-radius: 50%; background: ${statusColor.dot}; box-shadow: 0 0 6px ${statusColor.dot}; flex-shrink: 0;"></span>
-            <span style="font-size: 11px; font-weight: 600; color: #cbd5e1; white-space: nowrap;">
-              上下文 <span style="color: ${statusColor.text}; font-family: ui-monospace, Menlo, Consolas, monospace;">${pct.toFixed(1)}%</span>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px; line-height: 1.2;">
+          <div style="display: flex; align-items: center; gap: 5px; min-width: 0;">
+            <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: ${statusColor.dot}; box-shadow: 0 0 5px ${statusColor.dot}; flex-shrink: 0;"></span>
+            <span style="font-size: 10.5px; font-weight: 500; color: #94a3b8; white-space: nowrap;">
+              上下文 <span style="font-weight: 600; color: ${statusColor.text}; font-family: ui-monospace, Menlo, Consolas, monospace;">${pct.toFixed(1)}%</span>
             </span>
           </div>
           <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
             <span style="font-size: 10px; font-weight: 500; color: #cbd5e1; font-family: ui-monospace, Menlo, Consolas, monospace;">5h:${fiveHourPct}%</span>
-            <svg style="width: 11px; height: 11px; fill: none; stroke: currentColor; color: #94a3b8; transition: transform 0.2s; transform: rotate(0deg);" viewBox="0 0 24 24">
+            <span style="font-size: 10px; font-weight: 500; color: #a78bfa; font-family: ui-monospace, Menlo, Consolas, monospace;">周:${weeklyPct}%</span>
+            <svg style="width: 10px; height: 10px; fill: none; stroke: currentColor; color: #64748b;" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"></path>
             </svg>
           </div>
@@ -261,70 +262,67 @@
     }
 
     // Render Expanded (Full) View
-    let detailTagsHtml = "";
+    let detailTokensHtml = "";
     if (session.context_size > 0) {
-      detailTagsHtml = `
-        <div style="display: flex; gap: 3.5px; margin-top: 5px; flex-wrap: wrap;">
-          <span style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); padding: 1.5px 5px; border-radius: 4px; font-size: 9px; color: #cbd5e1; font-family: ui-monospace, Menlo, Consolas, monospace;">缓存 ${fmtK(session.cached_tokens || 0)}</span>
-          <span style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); padding: 1.5px 5px; border-radius: 4px; font-size: 9px; color: #cbd5e1; font-family: ui-monospace, Menlo, Consolas, monospace;">输入 ${fmtK(session.prompt_tokens || 0)}</span>
-          <span style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); padding: 1.5px 5px; border-radius: 4px; font-size: 9px; color: #cbd5e1; font-family: ui-monospace, Menlo, Consolas, monospace;">思考 ${fmtK(session.thinking_tokens || 0)}</span>
-          <span style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); padding: 1.5px 5px; border-radius: 4px; font-size: 9px; color: #cbd5e1; font-family: ui-monospace, Menlo, Consolas, monospace;">输出 ${fmtK(session.output_tokens || 0)}</span>
+      detailTokensHtml = `
+        <div style="display: flex; justify-content: space-between; font-size: 8.5px; color: #64748b; font-family: ui-monospace, Menlo, Consolas, monospace; margin-top: 2.5px; line-height: 1;">
+          <span>缓 ${fmtK(session.cached_tokens || 0)}</span>
+          <span>入 ${fmtK(session.prompt_tokens || 0)}</span>
+          <span>思 ${fmtK(session.thinking_tokens || 0)}</span>
+          <span>出 ${fmtK(session.output_tokens || 0)}</span>
         </div>
       `;
     }
 
     container.innerHTML = `
-      <!-- Header -->
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px;">
-        <div style="display: flex; align-items: center; gap: 5.5px;">
-          <span style="display: inline-block; width: 6.5px; height: 6.5px; border-radius: 50%; background: ${statusColor.dot}; box-shadow: 0 0 6px ${statusColor.dot}; flex-shrink: 0;"></span>
-          <span style="font-size: 11px; font-weight: 600; color: #e2e8f0; letter-spacing: 0.2px;">Token & 配额</span>
+      <!-- 1. 会话上下文 (首行整合状态与收起按键) -->
+      <div style="margin-bottom: 6px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; line-height: 1.2;">
+          <div style="display: flex; align-items: center; gap: 4.5px;">
+            <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: ${statusColor.dot}; box-shadow: 0 0 5px ${statusColor.dot}; flex-shrink: 0;"></span>
+            <span style="font-size: 10px; color: #cbd5e1; font-weight: 500;">上下文</span>
+            <span style="font-size: 10px; font-weight: 600; color: ${statusColor.text}; font-family: ui-monospace, Menlo, Consolas, monospace;">${pct.toFixed(1)}%</span>
+            <span style="color: #64748b; font-size: 9px; font-family: ui-monospace, Menlo, Consolas, monospace;">(${ctxK}/${maxK})</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 2px; color: #64748b; font-size: 9.5px; padding: 1px 4px; border-radius: 3px; background: rgba(255, 255, 255, 0.03);">
+            <span>收起</span>
+            <svg style="width: 9px; height: 9px; fill: none; stroke: currentColor; transform: rotate(180deg);" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"></path>
+            </svg>
+          </div>
         </div>
-        <div style="display: flex; align-items: center; gap: 3px; color: #94a3b8; font-size: 10px; padding: 2px 5px; border-radius: 4px; background: rgba(255, 255, 255, 0.03);">
-          <span>收起</span>
-          <svg style="width: 11px; height: 11px; fill: none; stroke: currentColor; transform: rotate(180deg);" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"></path>
-          </svg>
-        </div>
-      </div>
-
-      <!-- 1. 会话上下文 (Context) -->
-      <div style="margin-bottom: 8px;">
-        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3.5px;">
-          <span style="font-size: 10px; color: #94a3b8; font-weight: 500;">会话上下文</span>
-          <span style="font-size: 10.5px; font-weight: 600; color: #10b981; font-family: ui-monospace, Menlo, Consolas, monospace;">
-            ${pct.toFixed(1)}% <span style="font-weight: 400; color: #64748b; font-size: 9.5px;">(${ctxK}/${maxK})</span>
-          </span>
-        </div>
-        <div style="background: rgba(255,255,255,0.06); height: 5px; border-radius: 999px; overflow: hidden;">
+        <div style="background: rgba(255,255,255,0.06); height: 4px; border-radius: 999px; overflow: hidden;">
           <div style="background: linear-gradient(90deg, #10b981, #06b6d4); width: ${barWidth}%; height: 100%; border-radius: 999px; transition: width 0.3s ease;"></div>
         </div>
-        ${detailTagsHtml}
+        ${detailTokensHtml}
       </div>
 
-      <!-- 2. 5小时配额 (5-Hour Quota) -->
-      <div style="margin-bottom: 8px;">
-        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3.5px;">
-          <span style="font-size: 10px; color: #94a3b8; font-weight: 500;">5小时配额</span>
-          <span style="font-size: 10px; font-weight: 600; color: #38bdf8; font-family: ui-monospace, Menlo, Consolas, monospace;">
-            ${fiveHourPct}% ${fiveHourReset ? `<span style="font-weight: 400; color: #64748b; font-size: 9px;">(${fiveHourReset})</span>` : ""}
-          </span>
+      <!-- 2. 配额并排双列 (5小时配额 & 每周配额) -->
+      <div style="display: flex; gap: 8px;">
+        <!-- 5小时配额 -->
+        <div style="flex: 1; min-width: 0;">
+          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2.5px; line-height: 1.2;">
+            <span style="font-size: 9.5px; color: #94a3b8; font-weight: 500;">5h配额</span>
+            <span style="font-size: 9.5px; font-weight: 600; color: #38bdf8; font-family: ui-monospace, Menlo, Consolas, monospace;">
+              ${fiveHourPct}%${fiveHourReset ? `<span style="font-size: 8.5px; color: #64748b; font-weight: 400; margin-left: 2px;">(${fiveHourReset})</span>` : ""}
+            </span>
+          </div>
+          <div style="background: rgba(255,255,255,0.06); height: 3.5px; border-radius: 999px; overflow: hidden;">
+            <div style="background: linear-gradient(90deg, #38bdf8, #818cf8); width: ${fiveHourPct}%; height: 100%; border-radius: 999px; transition: width 0.3s ease;"></div>
+          </div>
         </div>
-        <div style="background: rgba(255,255,255,0.06); height: 4.5px; border-radius: 999px; overflow: hidden;">
-          <div style="background: linear-gradient(90deg, #38bdf8, #818cf8); width: ${fiveHourPct}%; height: 100%; border-radius: 999px; transition: width 0.3s ease;"></div>
-        </div>
-      </div>
 
-      <!-- 3. 每周配额 (Weekly Quota) -->
-      <div>
-        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3.5px;">
-          <span style="font-size: 10px; color: #94a3b8; font-weight: 500;">每周配额</span>
-          <span style="font-size: 10px; font-weight: 600; color: #a78bfa; font-family: ui-monospace, Menlo, Consolas, monospace;">
-            ${weeklyPct}% ${weeklyReset ? `<span style="font-weight: 400; color: #64748b; font-size: 9px;">(${weeklyReset})</span>` : ""}
-          </span>
-        </div>
-        <div style="background: rgba(255,255,255,0.06); height: 4.5px; border-radius: 999px; overflow: hidden;">
-          <div style="background: linear-gradient(90deg, #a78bfa, #c084fc); width: ${weeklyPct}%; height: 100%; border-radius: 999px; transition: width 0.3s ease;"></div>
+        <!-- 每周配额 -->
+        <div style="flex: 1; min-width: 0;">
+          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2.5px; line-height: 1.2;">
+            <span style="font-size: 9.5px; color: #94a3b8; font-weight: 500;">周配额</span>
+            <span style="font-size: 9.5px; font-weight: 600; color: #a78bfa; font-family: ui-monospace, Menlo, Consolas, monospace;">
+              ${weeklyPct}%${weeklyReset ? `<span style="font-size: 8.5px; color: #64748b; font-weight: 400; margin-left: 2px;">(${weeklyReset})</span>` : ""}
+            </span>
+          </div>
+          <div style="background: rgba(255,255,255,0.06); height: 3.5px; border-radius: 999px; overflow: hidden;">
+            <div style="background: linear-gradient(90deg, #a78bfa, #c084fc); width: ${weeklyPct}%; height: 100%; border-radius: 999px; transition: width 0.3s ease;"></div>
+          </div>
         </div>
       </div>
     `;
