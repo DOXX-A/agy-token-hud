@@ -1,10 +1,14 @@
 {
-  "name": "antigravity-tokens-hud",
+  "name": "agy-token-hud",
   "version": "1.0.0",
   "description": "Real-time token & quota usage HUD for Google Antigravity 2.0",
   "main": "index.js",
   "bin": {
+    "agy-token-hud": "./index.js",
     "antigravity-tokens-hud": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
   },
   "keywords": [
     "antigravity",
@@ -15,6 +19,14 @@
     "hud",
     "ai"
   ],
-  "author": "myslithell",
-  "license": "MIT"
+  "author": "DOXX-A",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DOXX-A/agy-token-hud.git"
+  },
+  "bugs": {
+    "url": "https://github.com/DOXX-A/agy-token-hud/issues"
+  },
+  "homepage": "https://github.com/DOXX-A/agy-token-hud#readme"
 }

@@ -14,7 +14,21 @@ function getDevToolsFilePath() {
     return path.join(appData, "Antigravity/DevToolsActivePort");
   } else {
     const configHome = process.env.XDG_CONFIG_HOME || path.join(home, ".config");
-    return path.join(configHome, "Antigravity/DevToolsActivePort");
+    const linuxPath = path.join(configHome, "Antigravity/DevToolsActivePort");
+    if (fs.existsSync(linuxPath)) return linuxPath;
+
+    // WSL: auto-detect Windows host Antigravity instance if running inside WSL
+    const mntCUsers = "/mnt/c/Users";
+    if (fs.existsSync(mntCUsers)) {
+      try {
+        const users = fs.readdirSync(mntCUsers);
+        for (const u of users) {
+          const wPath = path.join(mntCUsers, u, "AppData/Roaming/Antigravity/DevToolsActivePort");
+          if (fs.existsSync(wPath)) return wPath;
+        }
+      } catch (_) {}
+    }
+    return linuxPath;
   }
 }
 

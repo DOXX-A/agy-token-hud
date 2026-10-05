@@ -41,6 +41,15 @@ def get_conversations_dirs():
                             dirs.append(cpath)
         except Exception:
             pass
+    elif sys.platform != "win32" and os.path.exists("/mnt/c/Users"):
+        # If running in WSL, auto-discover Windows host conversation directories
+        try:
+            for u in os.listdir("/mnt/c/Users"):
+                cpath = os.path.join("/mnt/c/Users", u, ".gemini/antigravity/conversations")
+                if os.path.isdir(cpath) and cpath not in dirs:
+                    dirs.append(cpath)
+        except Exception:
+            pass
 
     return dirs
 
