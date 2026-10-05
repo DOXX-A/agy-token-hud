@@ -1,46 +1,188 @@
 # Antigravity Tokens HUD - Windows Installer
 $ErrorActionPreference = "Stop"
 
-Write-Host "🚀 Installing Antigravity Tokens HUD for Google Antigravity 2.0..." -ForegroundColor Cyan
-
+$RepoRawUrl = "https://raw.githubusercontent.com/DOXX-A/agy-token-hud/master"
 $InstallDir = "$env:USERPROFILE\.antigravity-tokens-hud"
-$SourceDir = $PSScriptRoot
 
-# Ensure target directory exists
+Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host "  🚀 Antigravity Tokens HUD Installer     " -ForegroundColor Cyan
+Write-Host "  Real-time Token & Quota Visualizer      " -ForegroundColor Cyan
+Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host ""
+
+# 1. Check Antigravity 2.0
+Write-Host "🔍 Checking for Google Antigravity 2.0..." -ForegroundColor Yellow
+$appDataAntigravity = "$env:APPDATA\Antigravity"
+$localAppAntigravity = "$env:LOCALAPPDATA\Programs\Antigravity"
+
+if (-not (Test-Path $appDataAntigravity) -and -not (Test-Path $localAppAntigravity)) {
+    Write-Host ""
+    Write-Host "❌ Google Antigravity 2.0 is not installed!" -ForegroundColor Red
+    Write-Host "👉 Please install Antigravity 2.0 first: https://antigravity.google/download" -ForegroundColor Yellow
+    Write-Host ""
+    exit 1
+}
+Write-Host "✅ Antigravity 2.0 detected." -ForegroundColor Green
+
+# 2. Check and automatically install Node.js
+Write-Host "🔍 Checking Node.js..." -ForegroundColor Yellow
+$nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+$needNodeInstall = $false
+$needNodeUpdate = $false
+
+if (-not $nodeCmd) {
+    $needNodeInstall = $true
+} else {
+    try {
+        $nodeVerStr = (node -v) -replace 'v',''
+        $nodeMajor = [int]($nodeVerStr.Split('.')[0])
+        if ($nodeMajor -lt 18) {
+            $needNodeUpdate = $true
+        }
+    } catch {
+        $needNodeInstall = $true
+    }
+}
+
+if ($needNodeInstall) {
+    Write-Host "⚠️ Node.js is not found. Starting automatic installation..." -ForegroundColor Yellow
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        Write-Host "📦 Installing Node.js LTS via winget..." -ForegroundColor Cyan
+        winget install OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements
+    } elseif (Get-Command choco -ErrorAction SilentlyContinue) {
+        choco install nodejs-lts -y
+    } elseif (Get-Command scoop -ErrorAction SilentlyContinue) {
+        scoop install nodejs-lts
+    } else {
+        Write-Host "⬇️ Downloading Node.js installer..." -ForegroundColor Cyan
+        $msiUrl = "https://nodejs.org/dist/v20.18.0/node-v20.18.0-x64.msi"
+        $msiPath = "$env:TEMP\node_setup.msi"
+        Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
+        Start-Process msiexec.exe -ArgumentList "/i `"$msiPath`" /qn /norestart" -Wait
+        Remove-Item $msiPath -Force -ErrorAction SilentlyContinue
+    }
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+} elseif ($needNodeUpdate) {
+    Write-Host "⚠️ Legacy Node.js version detected ($((node -v))). v18+ is recommended." -ForegroundColor Yellow
+    $ans = Read-Host "Would you like to update Node.js now? [Y/n]"
+    if ($ans -eq "" -or $ans -match "^[Yy]") {
+        if (Get-Command winget -ErrorAction SilentlyContinue) {
+            winget upgrade OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements
+        } elseif (Get-Command choco -ErrorAction SilentlyContinue) {
+            choco upgrade nodejs-lts -y
+        }
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+    }
+}
+Write-Host "✅ Node.js ready." -ForegroundColor Green
+
+# 3. Check and automatically install Python 3
+Write-Host "🔍 Checking Python 3..." -ForegroundColor Yellow
+$pyCmd = Get-Command python -ErrorAction SilentlyContinue
+if (-not $pyCmd) { $pyCmd = Get-Command python3 -ErrorAction SilentlyContinue }
+$needPyInstall = $false
+$needPyUpdate = $false
+
+if (-not $pyCmd) {
+    $needPyInstall = $true
+} else {
+    try {
+        $pyVer = & $pyCmd.Source -c "import sys; print(sys.version_info.major, sys.version_info.minor)"
+        $parts = $pyVer.Trim().Split(" ")
+        $major = [int]$parts[0]
+        $minor = [int]$parts[1]
+        if ($major -lt 3 -or ($major -eq 3 -and $minor -lt 8)) {
+            $needPyUpdate = $true
+        }
+    } catch {
+        $needPyInstall = $true
+    }
+}
+
+if ($needPyInstall) {
+    Write-Host "⚠️ Python 3 is not found. Starting automatic installation..." -ForegroundColor Yellow
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        Write-Host "📦 Installing Python 3.12 via winget..." -ForegroundColor Cyan
+        winget install Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements
+    } elseif (Get-Command choco -ErrorAction SilentlyContinue) {
+        choco install python3 -y
+    } elseif (Get-Command scoop -ErrorAction SilentlyContinue) {
+        scoop install python
+    } else {
+        Write-Host "⬇️ Downloading official Python installer..." -ForegroundColor Cyan
+        $pyUrl = "https://www.python.org/ftp/python/3.12.6/python-3.12.6-amd64.exe"
+        $pyPath = "$env:TEMP\python_setup.exe"
+        Invoke-WebRequest -Uri $pyUrl -OutFile $pyPath -UseBasicParsing
+        Start-Process -FilePath $pyPath -ArgumentList "/quiet InstallAllUsers=0 PrependPath=1 Include_test=0" -Wait
+        Remove-Item $pyPath -Force -ErrorAction SilentlyContinue
+    }
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+} elseif ($needPyUpdate) {
+    Write-Host "⚠️ Legacy Python version detected. 3.8+ is recommended." -ForegroundColor Yellow
+    $ans = Read-Host "Would you like to update Python 3 now? [Y/n]"
+    if ($ans -eq "" -or $ans -match "^[Yy]") {
+        if (Get-Command winget -ErrorAction SilentlyContinue) {
+            winget upgrade Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements
+        }
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+    }
+}
+Write-Host "✅ Python 3 ready." -ForegroundColor Green
+
+# 4. Download / Install files
+Write-Host "📦 Installing files to $InstallDir..." -ForegroundColor Yellow
 if (-not (Test-Path $InstallDir)) {
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 }
 
-# Stop any running instances
+# Stop any running instances first
 Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
     $_.Name -like "*node*" -and $_.CommandLine -like "*antigravity-tokens-hud*"
 } | ForEach-Object {
     Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
 }
 
-# Copy files
-$Files = @("index.js", "token_stats.py", "client_widget.js", "config.json", "package.json", "run.vbs", "uninstall.ps1")
-foreach ($file in $Files) {
-    $src = Join-Path $SourceDir $file
-    if (Test-Path $src) {
-        Copy-Item -Path $src -Destination $InstallDir -Force
+$files = @("index.js", "client_widget.js", "token_stats.py", "package.json", "run.vbs", "uninstall.ps1")
+foreach ($f in $files) {
+    if (Test-Path "$PSScriptRoot\$f") {
+        Copy-Item "$PSScriptRoot\$f" "$InstallDir\$f" -Force
+    } else {
+        Invoke-WebRequest -Uri "$RepoRawUrl/$f" -OutFile "$InstallDir\$f" -UseBasicParsing
     }
 }
-Write-Host "✅ Files copied to $InstallDir." -ForegroundColor Green
 
-# Create Startup shortcut in Windows Startup folder for auto-start
-$startupFolder = [Environment]::GetFolderPath("Startup")
-$startupVbs = Join-Path $startupFolder "antigravity-tokens-hud.vbs"
-$vbsSource = Join-Path $InstallDir "run.vbs"
-
-if (Test-Path $vbsSource) {
-    Copy-Item -Path $vbsSource -Destination $startupVbs -Force
-    Write-Host "✅ Created Startup shortcut: $startupVbs" -ForegroundColor Green
+# Default Chinese config
+if (-not (Test-Path "$InstallDir\config.json")) {
+    Set-Content -Path "$InstallDir\config.json" -Value '{"lang":"zh"}'
 }
 
-# Launch background daemon immediately
-Start-Process -FilePath "wscript.exe" -ArgumentList "`"$startupVbs`""
-Write-Host "✅ Started background daemon." -ForegroundColor Green
+# 5. Autostart via Windows Startup
+Write-Host "⚙️ Configuring Windows Startup..." -ForegroundColor Yellow
+$startupFolder = [Environment]::GetFolderPath("Startup")
+$vbsPath = "$startupFolder\antigravity-tokens-hud.vbs"
+$vbsContent = "CreateObject(`"Wscript.Shell`").Run `"node `"`"$InstallDir\index.js`"`"`"`, 0, False"
+[System.IO.File]::WriteAllText($vbsPath, $vbsContent, [System.Text.Encoding]::UTF8)
 
-Write-Host "`n✨ Antigravity Tokens HUD is successfully installed and running!" -ForegroundColor Cyan
-Write-Host "Open or focus Google Antigravity 2.0 to see the real-time token & quota HUD in the sidebar." -ForegroundColor Green
+# Start process now
+Start-Process -FilePath "wscript.exe" -ArgumentList "`"$vbsPath`""
+
+# Verify background process is running
+Start-Sleep -Seconds 2
+$running = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+    $_.Name -like "*node*" -and $_.CommandLine -like "*antigravity-tokens-hud*"
+}
+if (-not $running) {
+    $running = Get-Process node -ErrorAction SilentlyContinue
+}
+
+if ($running) {
+    Write-Host ""
+    Write-Host "==========================================" -ForegroundColor Green
+    Write-Host "🎉 SUCCESS! Antigravity Tokens HUD is ready!" -ForegroundColor Green
+    Write-Host "✨ Open Antigravity 2.0 — HUD is active above Settings." -ForegroundColor Green
+    Write-Host "==========================================" -ForegroundColor Green
+} else {
+    Write-Host ""
+    Write-Host "⚠️ Warning: HUD background process did not start automatically." -ForegroundColor Yellow
+    Write-Host "👉 You can launch it manually: node `"$InstallDir\index.js`"" -ForegroundColor Yellow
+}

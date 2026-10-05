@@ -6,6 +6,29 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20WSL%20%7C%20macOS%20%7C%20Linux-brightgreen)](#)
 [![Antigravity](https://img.shields.io/badge/Antigravity-2.0-orange)](#)
+[![Upstream](https://img.shields.io/badge/Upstream-myslithell%2Fantigravity--tokens--hud-informational)](https://github.com/myslithell/antigravity-tokens-hud)
+
+---
+
+## 📌 致谢与上游声明 / Upstream Attribution
+
+本项目基于 **[@myslithell](https://github.com/myslithell)** 的开源项目 **[myslithell/antigravity-tokens-hud](https://github.com/myslithell/antigravity-tokens-hud)** 进行深度定制与体验重构。  
+感谢原作者优秀的创意、CDP（Chrome DevTools Protocol）无侵入注入机制以及 SQLite 数据提取方案！
+
+---
+
+## 🌟 相比原版的深度重构与改进 / Major Improvements Over Upstream
+
+| 体验维度 | 原版 (myslithell/antigravity-tokens-hud) | 本重构版 (DOXX-A/agy-token-hud) |
+| :--- | :--- | :--- |
+| **空间占用** | 固定高度 ~160px，占据侧边栏大量纵向空间 | **双模态极致压缩**：折叠态仅 **25px**，展开态仅 **~72px**，释放超 55% 侧边栏可视空间 |
+| **卡片交互** | 点击卡片切换俄语/英语 (RU/EN) | **点击一键伸缩**（展开/收起切换），状态通过 `localStorage` 自动记忆 |
+| **Token 明细** | 仅展示总 Context 上下文体积及占比 | **四维度颗粒度拆解**：缓存 (Cache)、输入 (Prompt)、思考 (Thinking)、输出 (Output) |
+| **进度条设计** | 纯色彩条填充，无底槽对比 | **双色阶自适应底槽轨道**，亮色/暗色主题下均可清晰洞察真实占比与余量 |
+| **配额布局** | 5h 配额与周配额上下多行纵向堆叠 | **并排双列紧凑布局**，实时显示剩余百分比与精准重置倒计时（如 `1h25m`、`4d12h`） |
+| **视觉与排版** | 包含冗余模型名称，存在留白与遮罩 | 去除模型名占位，状态灯融合首行，消除顶部留白并紧凑对齐侧边栏底栏 |
+| **本地化** | 俄文与英文为主 | **中文原生全字标签**，字体清晰规整，自适应深色/浅色模式 |
+| **环境兼容** | 仅面向单机本地路径 | **WSL 与 Windows 跨环境双向自适应**，自动穿透宿主机调试端口与跨系统数据库 |
 
 ---
 
@@ -17,24 +40,11 @@
 
 ---
 
-## ✨ 核心特性 / Key Features
-
-- 🚀 **完全无侵入注入 (Zero-Intrusion CDP Injection)**  
-  通过 Antigravity 的 `DevToolsActivePort` 端口直接连接，采用 WebSocket + CDP 动态挂载前端组件，不修改客户端二进制或核心源码文件，不影响客户端自动更新。
-- 📊 **毫秒级精确 Token 解析 (Exact Token Accounting)**  
-  直接从本地 SQLite 会话数据库（`gen_metadata` 与 `steps` 表）提取 Protobuf 结构，解码实时 Varint 标签。精准区分并呈现：**缓存 (Cache)**、**输入 (Prompt)**、**思考 (Thinking)**、**输出 (Output)** 四项指标。
-- ⏱ **官方配额与重置倒计时 (Live Quotas & Reset Countdown)**  
-  实时获取 Antigravity 内置 RPC（`retrieveUserQuotaSummary`）返回的配额状态，清晰呈现 **5小时滚动配额** 与 **每周配额** 的百分比以及下一次重置倒计时（例如 `1h25m`、`4d12h`）。
-- 🎨 **原生 2.0 极简交互设计 (Pixel-Perfect Antigravity 2.0 Aesthetics)**  
-  - **极致空间压缩**：折叠态仅高约 **25px**，展开态仅高约 **72px**，紧凑贴合侧边栏左下角（设置按钮上方），不遮挡会话历史列表。
-  - **动态主题适配**：自适应亮色（Light）与暗色（Dark）模式，配备毛玻璃微光背景（`backdrop-filter: blur(12px)`）与平滑进度条过渡。
-  - **一键伸缩**：点击卡片任意区域即可无缝在“极简折叠态”与“详细展开态”之间切换，状态自动保存在 `localStorage`。
-- 💻 **跨平台与 WSL 混合环境原生支持 (Cross-Platform & WSL Ready)**  
-  原生支持 Windows、WSL（Windows Subsystem for Linux）、macOS 以及 Linux。在 WSL 环境中运行时，能自动穿透并识别 Windows 主机端的 Antigravity 调试端口与会话数据库。
-
----
-
 ## 🖥 界面预览 / UI Layout
+
+<p align="center">
+  <img src="assets/preview.png" alt="Antigravity Tokens HUD Preview" width="340" />
+</p>
 
 ### 1. 紧凑折叠态 (Collapsed View, ~25px)
 适合日常专注编码，以极简单行呈现关键上下文健康度与配额：
@@ -101,51 +111,44 @@ flowchart TD
 ## 🚀 快速上手 / Quick Start
 
 ### 前置条件 / Prerequisites
-- 已安装 **Node.js** (v18+ 或 v20+)
+- 已安装 **Node.js** (v18+)
 - 已安装 **Python 3** (3.8+)
 - 运行中的 **Google Antigravity 2.0**
 
 ---
 
-### Windows (一键安装 & 开机自启)
+### Windows (一键在线安装 / 本地安装)
 
-推荐使用内置的 PowerShell 安装脚本：
+#### 方式 A：PowerShell 一键命令
+```powershell
+irm https://raw.githubusercontent.com/DOXX-A/agy-token-hud/master/install.ps1 | iex
+```
 
-1. 克隆代码仓库：
-   ```powershell
-   git clone https://github.com/DOXX-A/agy-token-hud.git
-   cd agy-token-hud
-   ```
-
-2. 运行一键安装脚本：
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\install.ps1
-   ```
-   > 该脚本会自动将文件部署至 `~/.antigravity-tokens-hud`，在 Windows 启动项目录生成快捷自启项，并立即静默启动后台监控进程。
+#### 方式 B：克隆仓库安装
+```powershell
+git clone https://github.com/DOXX-A/agy-token-hud.git
+cd agy-token-hud
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+> 安装脚本会自动检测/配置依赖，将文件部署至 `$env:USERPROFILE\.antigravity-tokens-hud`，在 Windows 启动项目录生成快捷自启项，并立即静默启动后台监控守护进程。
 
 ---
 
-### Linux / WSL / macOS (手动启动或守护进程)
+### Linux / macOS / WSL
 
-1. 克隆并进入目录：
-   ```bash
-   git clone https://github.com/DOXX-A/agy-token-hud.git
-   cd agy-token-hud
-   ```
+#### 方式 A：终端一键命令
+```bash
+curl -fsSL https://raw.githubusercontent.com/DOXX-A/agy-token-hud/master/install.sh | bash
+```
 
-2. 直接前台运行：
-   ```bash
-   npm start
-   # 或
-   node index.js
-   ```
-
-3. （可选）使用 PM2 后台常驻：
-   ```bash
-   npm install -g pm2
-   pm2 start index.js --name agy-token-hud
-   pm2 save
-   ```
+#### 方式 B：手动运行
+```bash
+git clone https://github.com/DOXX-A/agy-token-hud.git
+cd agy-token-hud
+npm start
+# 或使用后台守护进程
+nohup node index.js > /dev/null 2>&1 &
+```
 
 ---
 
@@ -166,14 +169,15 @@ flowchart TD
 ## 🗑 卸载 / Uninstallation
 
 ### Windows
-运行仓库内或已安装目录中的卸载脚本：
+运行卸载脚本即可彻底清理后台进程、启动项与安装目录：
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.antigravity-tokens-hud\uninstall.ps1"
 ```
-脚本将自动：
-1. 终止正在运行的 `antigravity-tokens-hud` 后台进程。
-2. 移除 Windows 开机自启项目。
-3. 清理安装目录（`$env:USERPROFILE\.antigravity-tokens-hud`）。
+
+### Linux / macOS
+```bash
+~/.antigravity-tokens-hud/uninstall.sh
+```
 
 ---
 
@@ -197,4 +201,5 @@ powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
 
 ## 📄 开源许可证 / License
 
-本项目遵循 [MIT License](LICENSE) 开源许可证。
+本项目遵循 [MIT License](LICENSE) 开源许可证。  
+原版版权属于 [myslithell](https://github.com/myslithell/antigravity-tokens-hud)，重构与增强版版权属于 [DOXX-A](https://github.com/DOXX-A/agy-token-hud)。
