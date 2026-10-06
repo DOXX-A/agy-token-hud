@@ -32,7 +32,6 @@ function getDevToolsFilePath() {
   }
 }
 
-const DEVTOOLS_FILE = getDevToolsFilePath();
 const TOKEN_STATS_SCRIPT = path.join(__dirname, "token_stats.py");
 const CLIENT_SCRIPT_PATH = fs.existsSync(path.join(__dirname, "client_widget.js"))
   ? path.join(__dirname, "client_widget.js")
@@ -61,9 +60,10 @@ function getConfigLang() {
 }
 
 function getDevToolsInfo() {
-  if (!fs.existsSync(DEVTOOLS_FILE)) return null;
+  const devToolsFile = getDevToolsFilePath();
+  if (!fs.existsSync(devToolsFile)) return null;
   try {
-    const content = fs.readFileSync(DEVTOOLS_FILE, "utf8").trim().split("\n");
+    const content = fs.readFileSync(devToolsFile, "utf8").trim().split("\n");
     if (content.length >= 1 && content[0]) {
       return { port: parseInt(content[0].trim(), 10) };
     }
