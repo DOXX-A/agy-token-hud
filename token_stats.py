@@ -202,11 +202,16 @@ def collect_metrics(current_conv_id=None):
                     thinking_tok = s17_dict.get(9, 0)
                     text_tok = s17_dict.get(10, 0)
 
-                    if cached_tok + prompt_tok > 0:
-                        ctx_size = cached_tok + prompt_tok
-                    elif s9_ctx > 0:
+                    if s9_ctx > 0:
                         ctx_size = s9_ctx
-                        prompt_tok = s9_ctx
+                        if s17_dict.get(2, 0) > 0:
+                            prompt_tok = s17_dict.get(2, 0)
+                            cached_tok = max(0, s9_ctx - prompt_tok)
+                        else:
+                            prompt_tok = s9_ctx
+                            cached_tok = 0
+                    elif cached_tok + prompt_tok > 0:
+                        ctx_size = cached_tok + prompt_tok
                     else:
                         ctx_size = 0
 
