@@ -81,14 +81,18 @@ async function listAntigravityPages(port) {
   }
 }
 
-function fetchTokenStats() {
+function fetchTokenStats(sessionId) {
   return new Promise((resolve) => {
     const pythonBin = process.platform === "win32" ? "python" : "python3";
     const env = { ...process.env };
     if (process.platform !== "win32") {
       env.PATH = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", process.env.PATH || ""].join(":");
     }
-    execFile(pythonBin, [TOKEN_STATS_SCRIPT, "--json"], { timeout: 10000, env }, (err, stdout) => {
+    const args = [TOKEN_STATS_SCRIPT, "--json"];
+    if (sessionId) {
+      args.push("--session", sessionId);
+    }
+    execFile(pythonBin, args, { timeout: 10000, env }, (err, stdout) => {
       if (err || !stdout) {
         resolve(null);
         return;
@@ -210,7 +214,16 @@ async function updateLoop() {
 
     if (activePages.size === 0) return;
 
-    const stats = await fetchTokenStats();
+    let activeSessionId = null;
+    for (const page of pages) {
+      const m = page.url && page.url.match(/\/c\/([a-zA-Z0-9_-]+)/);
+      if (m && m[1]) {
+        activeSessionId = m[1];
+        break;
+      }
+    }
+
+    const stats = await fetchTokenStats(activeSessionId);
     if (!stats) return;
 
     let clientScript = "";

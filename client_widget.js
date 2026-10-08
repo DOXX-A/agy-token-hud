@@ -253,10 +253,11 @@
     } else if (!activeId && data.current_session) {
       session = data.current_session;
     } else {
+      const defaultMax = data.current_session?.max_context || 256000;
       session = {
         session_id: activeId || "new",
         context_size: 0,
-        max_context: 1000000,
+        max_context: defaultMax,
         context_percent: 0.0,
         cached_tokens: 0,
         prompt_tokens: 0,
@@ -269,7 +270,7 @@
     const pct = (session.context_percent != null) ? session.context_percent : 0.0;
     const barWidth = Math.min(100, Math.max(0, pct));
     const ctxK = fmtK(session.context_size || 0);
-    const maxK = ((session.max_context || 1000000) >= 1000000) ? "1M" : fmtK(session.max_context);
+    const maxK = ((session.max_context || 256000) >= 1000000) ? "1M" : fmtK(session.max_context || 256000);
 
     // 2. Official Quota Summary from Antigravity Backend
     const quotaGroups = await getQuotas();

@@ -135,9 +135,8 @@ def collect_metrics(current_conv_id=None):
         current_conv_id = os.path.basename(db_files[0]).replace(".db", "")
 
     all_records = []
-    current_session = None
     latest_ts = 0
-    cutoff_ts = now_ts - (8 * 86400)
+    cutoff_ts = now_ts - (30 * 86400)
 
     for db_path in db_files:
         sess_id = os.path.basename(db_path).replace(".db", "")
@@ -173,29 +172,58 @@ def collect_metrics(current_conv_id=None):
                     if ts > latest_ts:
                         latest_ts = ts
                     proto = parse_proto(data)
+                    s9_ctx = 0
+                    s9_max = 256000
+                    s17_dict = {}
+
                     for fn, wt, val in proto:
                         if fn == 1:
                             for sfn, swt, sval in parse_proto(val):
-                                if sfn == 17:
+                                if sfn == 9 and swt == "bytes":
+                                    for xfn, xwt, xval in parse_proto(sval):
+                                        if xfn == 10 and xwt == "bytes":
+                                            sub10 = parse_proto(xval)
+                                            d10 = {k: v for k, t, v in sub10 if t == "varint"}
+                                            if 1 in d10 and d10[1] > 0:
+                                                s9_ctx = d10[1]
+                                            if 4 in d10 and d10[4] > 0:
+                                                s9_max = d10[4]
+                                elif sfn == 17 and swt == "bytes":
                                     for tfn, twt, tval in parse_proto(sval):
                                         if twt == "bytes":
-                                            sub = parse_proto(tval)
-                                            d = {k: v for k, t, v in sub if t == "varint"}
-                                            if d and (d.get(2, 0) > 0 or d.get(5, 0) > 0 or d.get(3, 0) > 0):
-                                                rec = {
-                                                    "session_id": sess_id,
-                                                    "idx": idx,
-                                                    "timestamp": ts,
-                                                    "prompt_tokens": d.get(2, 0),
-                                                    "output_tokens": d.get(3, 0),
-                                                    "cached_tokens": d.get(5, 0),
-                                                    "thinking_tokens": d.get(9, 0),
-                                                    "text_tokens": d.get(10, 0),
-                                                    "context_size": d.get(5, 0) + d.get(2, 0)
-                                                }
-                                                all_records.append(rec)
-                                                if sess_id == current_conv_id:
-                                                    current_session = rec
+                                            sub17 = parse_proto(tval)
+                                            d17 = {k: v for k, t, v in sub17 if t == "varint"}
+                                            if d17 and (d17.get(2, 0) > 0 or d17.get(3, 0) > 0 or d17.get(5, 0) > 0):
+                                                s17_dict.update(d17)
+
+                    cached_tok = s17_dict.get(5, 0)
+                    prompt_tok = s17_dict.get(2, 0)
+                    output_tok = s17_dict.get(3, 0)
+                    thinking_tok = s17_dict.get(9, 0)
+                    text_tok = s17_dict.get(10, 0)
+
+                    if cached_tok + prompt_tok > 0:
+                        ctx_size = cached_tok + prompt_tok
+                    elif s9_ctx > 0:
+                        ctx_size = s9_ctx
+                        prompt_tok = s9_ctx
+                    else:
+                        ctx_size = 0
+
+                    if ctx_size > 0 or output_tok > 0:
+                        rec = {
+                            "session_id": sess_id,
+                            "idx": idx,
+                            "timestamp": ts,
+                            "prompt_tokens": prompt_tok,
+                            "output_tokens": output_tok,
+                            "cached_tokens": cached_tok,
+                            "thinking_tokens": thinking_tok,
+                            "text_tokens": text_tok,
+                            "context_size": ctx_size,
+                            "max_context": s9_max if s9_max > 0 else 256000,
+                        }
+                        all_records.append(rec)
             except Exception:
                 pass
             conn.close()
@@ -206,14 +234,10 @@ def collect_metrics(current_conv_id=None):
             if tmp_path and os.path.exists(tmp_path):
                 try: os.remove(tmp_path)
                 except Exception: pass
-                wal = tmp_path + "-wal"
-                if os.path.exists(wal):
-                    try: os.remove(wal)
-                    except Exception: pass
-                shm = tmp_path + "-shm"
-                if os.path.exists(shm):
-                    try: os.remove(shm)
-                    except Exception: pass
+                for ext in ["-wal", "-shm"]:
+                    if os.path.exists(tmp_path + ext):
+                        try: os.remove(tmp_path + ext)
+                        except Exception: pass
 
     ref_ts = latest_ts if latest_ts > 0 else now_ts
     h5_ts = ref_ts - (5 * 3600)
@@ -222,16 +246,16 @@ def collect_metrics(current_conv_id=None):
     h5_records = [r for r in all_records if r["timestamp"] >= h5_ts]
     w1_records = [r for r in all_records if r["timestamp"] >= w1_ts]
 
-    max_context = 1000000
     sessions_map = {}
     for r in all_records:
         sid = r["session_id"]
         ctx = r["context_size"]
+        max_ctx = r.get("max_context", 256000)
         sessions_map[sid] = {
             "session_id": sid,
             "context_size": ctx,
-            "max_context": max_context,
-            "context_percent": round((ctx / max_context) * 100, 2),
+            "max_context": max_ctx,
+            "context_percent": round((ctx / max_ctx) * 100, 2) if max_ctx > 0 else 0.0,
             "cached_tokens": r["cached_tokens"],
             "prompt_tokens": r["prompt_tokens"],
             "output_tokens": r["output_tokens"],
@@ -241,6 +265,8 @@ def collect_metrics(current_conv_id=None):
 
     current_session = sessions_map.get(current_conv_id)
     current_context = current_session["context_size"] if current_session else 0
+    current_max = current_session["max_context"] if current_session else 256000
+    current_pct = current_session["context_percent"] if current_session else 0.0
     current_cached = current_session["cached_tokens"] if current_session else 0
     current_prompt = current_session["prompt_tokens"] if current_session else 0
     current_output = current_session["output_tokens"] if current_session else 0
@@ -251,8 +277,8 @@ def collect_metrics(current_conv_id=None):
         "current_session": {
             "session_id": current_conv_id,
             "context_size": current_context,
-            "max_context": max_context,
-            "context_percent": round((current_context / max_context) * 100, 2),
+            "max_context": current_max,
+            "context_percent": current_pct,
             "cached_tokens": current_cached,
             "prompt_tokens": current_prompt,
             "output_tokens": current_output,
