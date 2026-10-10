@@ -3,7 +3,40 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { execFile } = require("child_process");
+const net = require("net");
+const readline = require("readline");
+const { spawn, execFile } = require("child_process");
+
+// 1. Singleton Lock: Ensure only one daemon instance runs at any time
+const SINGLETON_PIPE = process.platform === "win32"
+  ? "\\\\.\\pipe\\antigravity-tokens-hud-lock"
+  : path.join(os.tmpdir(), "antigravity-tokens-hud.sock");
+
+const singletonServer = net.createServer();
+
+singletonServer.once("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.log("[Antigravity Tokens HUD] Another daemon instance is already active. Exiting.");
+    process.exit(0);
+  } else {
+    console.error("[Antigravity Tokens HUD] Singleton lock error:", err);
+  }
+});
+
+if (process.platform !== "win32" && fs.existsSync(SINGLETON_PIPE)) {
+  try { fs.unlinkSync(SINGLETON_PIPE); } catch (_) {}
+}
+
+singletonServer.listen(SINGLETON_PIPE, () => {
+  singletonServer.unref(); // Do not block natural process exit
+});
+
+// Paths and constants
+const TOKEN_STATS_SCRIPT = path.join(__dirname, "token_stats.py");
+const CLIENT_SCRIPT_PATH = fs.existsSync(path.join(__dirname, "client_widget.js"))
+  ? path.join(__dirname, "client_widget.js")
+  : path.join(__dirname, "client_widget_injector.js");
+const CONFIG_FILE = path.join(__dirname, "config.json");
 
 function getDevToolsFilePath() {
   const home = os.homedir();
@@ -32,22 +65,33 @@ function getDevToolsFilePath() {
   }
 }
 
-const TOKEN_STATS_SCRIPT = path.join(__dirname, "token_stats.py");
-const CLIENT_SCRIPT_PATH = fs.existsSync(path.join(__dirname, "client_widget.js"))
-  ? path.join(__dirname, "client_widget.js")
-  : path.join(__dirname, "client_widget_injector.js");
-const CONFIG_FILE = path.join(__dirname, "config.json");
-
 let cdpMessageId = 1;
 function nextCdpId() {
   cdpMessageId = (cdpMessageId + 1) & 0x7fffffff;
   return cdpMessageId;
 }
 
-// Map of pageId -> { ws, injected: boolean, url: string }
+// Map of pageId -> { ws, injected: boolean, pageId: string, url: string }
 const activePages = new Map();
 let currentPort = null;
 let isUpdating = false;
+
+// Cached client widget script
+let cachedClientScript = "";
+let cachedClientMtime = 0;
+function getClientScript() {
+  try {
+    if (fs.existsSync(CLIENT_SCRIPT_PATH)) {
+      const stat = fs.statSync(CLIENT_SCRIPT_PATH);
+      if (stat.mtimeMs !== cachedClientMtime) {
+        cachedClientScript = fs.readFileSync(CLIENT_SCRIPT_PATH, "utf8");
+        cachedClientMtime = stat.mtimeMs;
+      }
+      return cachedClientScript;
+    }
+  } catch (_) {}
+  return cachedClientScript;
+}
 
 function getConfigLang() {
   try {
@@ -81,18 +125,132 @@ async function listAntigravityPages(port) {
   }
 }
 
-function fetchTokenStats(sessionId) {
-  return new Promise((resolve) => {
+// 2. Persistent Python Worker Manager
+class PythonStatsWorker {
+  constructor() {
+    this.process = null;
+    this.rl = null;
+    this.pendingResolvers = [];
+    this.isStarting = false;
+    this.spawnWorker();
+  }
+
+  getPythonCommand() {
     const pythonBin = process.platform === "win32" ? "python" : "python3";
     const env = { ...process.env };
     if (process.platform !== "win32") {
       env.PATH = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", process.env.PATH || ""].join(":");
     }
-    const args = [TOKEN_STATS_SCRIPT, "--json"];
-    if (sessionId) {
-      args.push("--session", sessionId);
+    return { bin: pythonBin, env };
+  }
+
+  spawnWorker() {
+    if (this.isStarting) return;
+    this.isStarting = true;
+
+    try {
+      const { bin, env } = this.getPythonCommand();
+      this.process = spawn(bin, [TOKEN_STATS_SCRIPT, "--worker"], {
+        env,
+        stdio: ["pipe", "pipe", "pipe"]
+      });
+
+      this.rl = readline.createInterface({
+        input: this.process.stdout,
+        crlfDelay: Infinity
+      });
+
+      this.rl.on("line", (line) => {
+        if (!line.trim()) return;
+        try {
+          const res = JSON.parse(line);
+          const cb = this.pendingResolvers.shift();
+          if (cb) {
+            if (res.status === "ok") {
+              cb.resolve(res.data);
+            } else {
+              cb.resolve(null);
+            }
+          }
+        } catch (_) {
+          const cb = this.pendingResolvers.shift();
+          if (cb) cb.resolve(null);
+        }
+      });
+
+      this.process.stderr.on("data", () => {
+        // Suppress stderr noise
+      });
+
+      this.process.on("error", () => {
+        this.cleanup();
+      });
+
+      this.process.on("exit", () => {
+        this.cleanup();
+      });
+    } catch (_) {
+      this.cleanup();
+    } finally {
+      this.isStarting = false;
     }
-    execFile(pythonBin, args, { timeout: 10000, env }, (err, stdout) => {
+  }
+
+  cleanup() {
+    while (this.pendingResolvers.length > 0) {
+      const cb = this.pendingResolvers.shift();
+      if (cb) cb.resolve(null);
+    }
+    try {
+      if (this.rl) this.rl.close();
+    } catch (_) {}
+    try {
+      if (this.process) this.process.kill();
+    } catch (_) {}
+    this.process = null;
+    this.rl = null;
+  }
+
+  fetchStats(sessionId) {
+    return new Promise((resolve) => {
+      if (!this.process || this.process.killed) {
+        this.spawnWorker();
+      }
+
+      if (!this.process || !this.process.stdin.writable) {
+        // Fallback to one-shot execution if worker failed
+        this.fallbackExec(sessionId, resolve);
+        return;
+      }
+
+      const timer = setTimeout(() => {
+        // Timeout safeguard: remove resolver and restart worker
+        const idx = this.pendingResolvers.findIndex(cb => cb.timer === timer);
+        if (idx !== -1) {
+          this.pendingResolvers.splice(idx, 1);
+          resolve(null);
+          this.cleanup();
+        }
+      }, 3500);
+
+      this.pendingResolvers.push({ resolve, timer });
+
+      try {
+        const payload = JSON.stringify({ action: "collect", session_id: sessionId }) + "\n";
+        this.process.stdin.write(payload);
+      } catch (_) {
+        clearTimeout(timer);
+        this.cleanup();
+        this.fallbackExec(sessionId, resolve);
+      }
+    });
+  }
+
+  fallbackExec(sessionId, resolve) {
+    const { bin, env } = this.getPythonCommand();
+    const args = [TOKEN_STATS_SCRIPT, "--json"];
+    if (sessionId) args.push("--session", sessionId);
+    execFile(bin, args, { timeout: 6000, env }, (err, stdout) => {
       if (err || !stdout) {
         resolve(null);
         return;
@@ -103,8 +261,14 @@ function fetchTokenStats(sessionId) {
         resolve(null);
       }
     });
-  });
+  }
+
+  destroy() {
+    this.cleanup();
+  }
 }
+
+const statsWorker = new PythonStatsWorker();
 
 function connectPageWebSocket(page) {
   return new Promise((resolve) => {
@@ -178,7 +342,7 @@ async function updateLoop() {
         try { entry.ws.close(); } catch (_) {}
       }
       activePages.clear();
-      return;
+      return 8000; // Antigravity not running, sleep 8s
     }
 
     if (currentPort !== info.port) {
@@ -212,7 +376,7 @@ async function updateLoop() {
       }
     }
 
-    if (activePages.size === 0) return;
+    if (activePages.size === 0) return 4000; // No valid pages connected, sleep 4s
 
     let activeSessionId = null;
     for (const page of pages) {
@@ -223,25 +387,37 @@ async function updateLoop() {
       }
     }
 
-    const stats = await fetchTokenStats(activeSessionId);
-    if (!stats) return;
-
-    let clientScript = "";
-    try {
-      clientScript = fs.readFileSync(CLIENT_SCRIPT_PATH, "utf8");
-    } catch (_) {}
+    const stats = await statsWorker.fetchStats(activeSessionId);
+    if (!stats) return 2500;
 
     const lang = getConfigLang();
     const payload = JSON.stringify(stats);
+    const clientScript = getClientScript();
 
     for (const [id, entry] of activePages) {
       if (entry.ws.readyState !== WebSocket.OPEN) continue;
 
-      const evalCode = `
-        window.__AGY_DATA__ = ${payload};
-        window.__AGY_LANG__ = ${JSON.stringify(lang)};
-        ${clientScript}
-      `;
+      let evalCode = "";
+      if (!entry.injected) {
+        // Full initial injection once
+        evalCode = `
+          window.__AGY_DATA__ = ${payload};
+          window.__AGY_LANG__ = ${JSON.stringify(lang)};
+          ${clientScript};
+          window.__AGY_HUD_INSTALLED__ = true;
+        `;
+        entry.injected = true;
+      } else {
+        // Fast granular data update (< 200 bytes)
+        evalCode = `
+          if (typeof window.__AGY_UPDATE__ === "function") {
+            window.__AGY_UPDATE__(${payload}, ${JSON.stringify(lang)});
+          } else {
+            window.__AGY_DATA__ = ${payload};
+            window.__AGY_RENDER__ && window.__AGY_RENDER__();
+          }
+        `;
+      }
 
       entry.ws.send(JSON.stringify({
         id: nextCdpId(),
@@ -252,13 +428,33 @@ async function updateLoop() {
         }
       }));
     }
+
+    return 2500; // Healthy cycle, check again in 2.5s
   } catch (_) {
-    // Non-fatal, retry next tick
+    return 3000;
   } finally {
     isUpdating = false;
   }
 }
 
-console.log("[Antigravity Tokens HUD] Daemon running. Monitoring Antigravity DevTools...");
-setInterval(updateLoop, 1000);
-updateLoop();
+// Adaptive polling loop
+async function runScheduler() {
+  const nextDelay = await updateLoop();
+  setTimeout(runScheduler, nextDelay || 2500);
+}
+
+// Clean termination handling
+process.on("SIGINT", () => {
+  statsWorker.destroy();
+  process.exit(0);
+});
+process.on("SIGTERM", () => {
+  statsWorker.destroy();
+  process.exit(0);
+});
+process.on("exit", () => {
+  statsWorker.destroy();
+});
+
+console.log("[Antigravity Tokens HUD] Daemon running with Singleton Lock & Persistent Worker.");
+runScheduler();
