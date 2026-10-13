@@ -305,6 +305,21 @@ function connectPageWebSocket(page) {
               try { ws.close(); } catch (_) {}
               activePages.delete(page.id);
             }
+          } else if (data.result?.result?.value === "need_inject") {
+            const script = getClientScript();
+            if (script && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({
+                id: nextCdpId(),
+                method: "Runtime.evaluate",
+                params: {
+                  expression: `${script};\nwindow.__AGY_HUD_INSTALLED__ = true;`,
+                  returnByValue: false
+                }
+              }));
+              entry.injected = true;
+            } else {
+              entry.injected = false;
+            }
           }
         } catch (_) {}
       };
@@ -398,6 +413,7 @@ async function updateLoop() {
       if (entry.ws.readyState !== WebSocket.OPEN) continue;
 
       let evalCode = "";
+      let returnByValue = false;
       if (!entry.injected) {
         // Full initial injection once
         evalCode = `
@@ -408,14 +424,18 @@ async function updateLoop() {
         `;
         entry.injected = true;
       } else {
-        // Fast granular data update (< 200 bytes)
+        // Fast granular data update (< 200 bytes) with context-loss detection
+        returnByValue = true;
         evalCode = `
-          if (typeof window.__AGY_UPDATE__ === "function") {
-            window.__AGY_UPDATE__(${payload}, ${JSON.stringify(lang)});
-          } else {
+          (function() {
             window.__AGY_DATA__ = ${payload};
-            window.__AGY_RENDER__ && window.__AGY_RENDER__();
-          }
+            window.__AGY_LANG__ = ${JSON.stringify(lang)};
+            if (typeof window.__AGY_UPDATE__ === "function") {
+              window.__AGY_UPDATE__(window.__AGY_DATA__, window.__AGY_LANG__);
+              return "ok";
+            }
+            return "need_inject";
+          })()
         `;
       }
 
@@ -424,7 +444,7 @@ async function updateLoop() {
         method: "Runtime.evaluate",
         params: {
           expression: evalCode,
-          returnByValue: false
+          returnByValue
         }
       }));
     }

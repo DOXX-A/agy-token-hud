@@ -481,11 +481,12 @@
       } catch (_) {}
     }
 
-    // 500ms fallback check for router path switch
+    // 500ms fallback check for router path switch or sidebar DOM remount
     setInterval(() => {
       const currentId = getActiveConvId();
       const currentPath = window.location.pathname;
-      if (currentId !== lastId || currentPath !== lastPath) {
+      const missingWidget = !document.getElementById("antigravity-token-widget");
+      if (currentId !== lastId || currentPath !== lastPath || missingWidget) {
         lastId = currentId;
         lastPath = currentPath;
         if (window.__AGY_RENDER__) window.__AGY_RENDER__();
