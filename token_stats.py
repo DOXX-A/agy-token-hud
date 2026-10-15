@@ -28,10 +28,37 @@ _LAST_METRICS = None
 _LAST_METRICS_CONV_ID = None
 _LAST_METRICS_SIGNATURE = None
 
+def get_running_wsl_distros():
+    """Returns currently running WSL distros. Never wakes up sleeping WSL distros."""
+    if sys.platform != "win32":
+        return []
+    try:
+        out = subprocess.check_output(["wsl.exe", "-l", "--running", "-q"], text=False, timeout=1.0)
+        try:
+            text = out.decode("utf-16le")
+        except Exception:
+            text = out.decode("utf-8", errors="ignore")
+        return [line.strip().replace("\x00", "") for line in text.splitlines() if line.strip().replace("\x00", "")]
+    except Exception:
+        return []
+
 def get_conversations_dirs(force_refresh=False):
     global _CACHED_CONV_DIRS, _LAST_DIR_DISCOVERY_TIME
     now = time.time()
     if not force_refresh and _CACHED_CONV_DIRS is not None and (now - _LAST_DIR_DISCOVERY_TIME < 300.0):
+        # Filter out WSL paths if the distro stopped running
+        if sys.platform == "win32" and any(d.startswith(("\\\\wsl.localhost\\", "\\\\wsl$\\")) for d in _CACHED_CONV_DIRS):
+            running = set(get_running_wsl_distros())
+            valid_dirs = []
+            for d in _CACHED_CONV_DIRS:
+                if d.startswith(("\\\\wsl.localhost\\", "\\\\wsl$\\")):
+                    parts = d.strip("\\").split("\\")
+                    distro = parts[1] if len(parts) > 1 else ""
+                    if distro in running:
+                        valid_dirs.append(d)
+                else:
+                    valid_dirs.append(d)
+            return valid_dirs
         return _CACHED_CONV_DIRS
 
     dirs = []
@@ -39,15 +66,10 @@ def get_conversations_dirs(force_refresh=False):
     if os.path.isdir(default_dir):
         dirs.append(default_dir)
 
-    # If running on Windows, auto-discover WSL distros with timeout protection
+    # If running on Windows, ONLY auto-discover currently running WSL distros (never wake up stopped VMs)
     if sys.platform == "win32":
         try:
-            out = subprocess.check_output(["wsl.exe", "-l", "-q"], text=False, timeout=1.5)
-            try:
-                text = out.decode("utf-16le")
-            except Exception:
-                text = out.decode("utf-8", errors="ignore")
-            distros = [line.strip().replace("\x00", "") for line in text.splitlines() if line.strip().replace("\x00", "")]
+            distros = get_running_wsl_distros()
             for d in distros:
                 home_path = rf"\\wsl.localhost\{d}\home"
                 if os.path.exists(home_path):
@@ -250,7 +272,15 @@ def collect_metrics(current_conv_id=None):
     now_ts = int(time.time())
     db_dirs = get_conversations_dirs()
     db_files = []
+    running_distros = None
     for d in db_dirs:
+        if sys.platform == "win32" and d.startswith(("\\\\wsl.localhost\\", "\\\\wsl$\\")):
+            if running_distros is None:
+                running_distros = set(get_running_wsl_distros())
+            parts = d.strip("\\").split("\\")
+            distro = parts[1] if len(parts) > 1 else ""
+            if distro not in running_distros:
+                continue
         db_files.extend(glob.glob(os.path.join(d, "*.db")))
 
     # Extract mtimes for all db files

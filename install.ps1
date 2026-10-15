@@ -160,7 +160,9 @@ if (-not (Test-Path "$InstallDir\config.json")) {
 Write-Host "⚙️ Configuring Windows Startup..." -ForegroundColor Yellow
 $startupFolder = [Environment]::GetFolderPath("Startup")
 $vbsPath = "$startupFolder\antigravity-tokens-hud.vbs"
-$vbsContent = "CreateObject(`"Wscript.Shell`").Run `"node `"`"$InstallDir\index.js`"`"`"`, 0, False"
+$nodePath = (Get-Command node -ErrorAction SilentlyContinue).Source
+if (-not $nodePath) { $nodePath = "node" }
+$vbsContent = "CreateObject(`"Wscript.Shell`").Run `"`"`"$nodePath`"`" `"`"$InstallDir\index.js`"`"`"`, 0, False"
 [System.IO.File]::WriteAllText($vbsPath, $vbsContent, [System.Text.Encoding]::UTF8)
 
 # Start process now
