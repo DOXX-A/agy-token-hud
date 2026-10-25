@@ -108,7 +108,10 @@
 
   function fmtK(n) {
     if (!n || n <= 0) return "0";
-    if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
+    if (n >= 1000000) {
+      const m = n / 1000000;
+      return (Number.isInteger(m) ? m : m.toFixed(1)) + "M";
+    }
     if (n >= 1000) return Math.round(n / 1000) + "k";
     return n + "";
   }
@@ -268,7 +271,7 @@
     const pct = (session.context_percent != null) ? session.context_percent : 0.0;
     const barWidth = Math.min(100, Math.max(0, pct));
     const ctxK = fmtK(session.context_size || 0);
-    const maxK = ((session.max_context || 256000) >= 1000000) ? "1M" : fmtK(session.max_context || 256000);
+    const maxK = fmtK(session.max_context || 256000);
 
     // 2. Official Quota Summary from Antigravity Backend
     const quotaGroups = await getQuotas();
