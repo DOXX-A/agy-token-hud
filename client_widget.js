@@ -96,14 +96,16 @@
     }
   }
 
-  function getStatusColor(pct, fiveHourPct, isDark) {
-    if (pct >= 90 || (fiveHourPct != null && fiveHourPct <= 10)) {
-      return { dot: "#ef4444", text: isDark ? "#ef4444" : "#dc2626" };
-    }
-    if (pct >= 75 || (fiveHourPct != null && fiveHourPct <= 25)) {
-      return { dot: "#f59e0b", text: isDark ? "#f59e0b" : "#d97706" };
-    }
+  function getContextStatusColor(pct, isDark) {
+    if (pct >= 90) return { dot: "#ef4444", text: isDark ? "#ef4444" : "#dc2626" };
+    if (pct >= 75) return { dot: "#f59e0b", text: isDark ? "#f59e0b" : "#d97706" };
     return { dot: "#10b981", text: isDark ? "#10b981" : "#059669" };
+  }
+
+  function getQuotaColor(val, isDark, defaultColor) {
+    if (val != null && val <= 10) return isDark ? "#ef4444" : "#dc2626";
+    if (val != null && val <= 25) return isDark ? "#f59e0b" : "#d97706";
+    return defaultColor;
   }
 
   function fmtK(n) {
@@ -295,7 +297,20 @@
       }
     }
 
-    const statusColor = getStatusColor(pct, fiveHourPct, theme.isDark);
+    const isGateway = !!session.is_gateway;
+    const ctxStatus = getContextStatusColor(pct, theme.isDark);
+    const color5h = getQuotaColor(fiveHourPct, theme.isDark, theme.c5h);
+    const colorW = getQuotaColor(weeklyPct, theme.isDark, theme.cWeekly);
+
+    // 状态圆点：BYOK/网关不消耗官方配额，圆点仅反映上下文；官方会话综合上下文与5h配额
+    let dotColor = ctxStatus.dot;
+    if (!isGateway) {
+      if (fiveHourPct != null && fiveHourPct <= 10) {
+        dotColor = "#ef4444";
+      } else if (fiveHourPct != null && fiveHourPct <= 25 && dotColor !== "#ef4444") {
+        dotColor = "#f59e0b";
+      }
+    }
 
     const tip5h = `5小时配额: ${fiveHourPct}%${fiveHourReset ? ` (${fiveHourReset}后重置)` : ""}`;
     const tipWeekly = `每周配额: ${weeklyPct}%${weeklyReset ? ` (${weeklyReset}后重置)` : ""}`;
@@ -317,12 +332,14 @@
         const h5Span = container.querySelector("#agy-5h-c");
         const wSpan = container.querySelector("#agy-w-c");
         if (dot && pctSpan && h5Span && wSpan) {
-          dot.style.background = statusColor.dot;
-          dot.style.boxShadow = `0 0 5px ${statusColor.dot}`;
+          dot.style.background = dotColor;
+          dot.style.boxShadow = `0 0 5px ${dotColor}`;
           pctSpan.textContent = `${pct.toFixed(1)}%`;
-          pctSpan.style.color = statusColor.text;
+          pctSpan.style.color = ctxStatus.text;
           h5Span.textContent = `5h:${fiveHourPct}%`;
+          h5Span.style.color = color5h;
           wSpan.textContent = `周:${weeklyPct}%`;
+          wSpan.style.color = colorW;
           return;
         }
       } else {
@@ -337,15 +354,17 @@
         const detailEl = container.querySelector("#agy-tokens-detail");
 
         if (dot && pctSpan && countsSpan && ctxBar && h5Span && h5Bar && wSpan && wBar) {
-          dot.style.background = statusColor.dot;
-          dot.style.boxShadow = `0 0 5px ${statusColor.dot}`;
+          dot.style.background = dotColor;
+          dot.style.boxShadow = `0 0 5px ${dotColor}`;
           pctSpan.textContent = `${pct.toFixed(1)}%`;
-          pctSpan.style.color = statusColor.text;
+          pctSpan.style.color = ctxStatus.text;
           countsSpan.textContent = `(${ctxK}/${maxK})`;
           ctxBar.style.width = `${barWidth}%`;
           h5Span.innerHTML = `${fiveHourPct}%${fiveHourReset ? `<span style="font-size: 10px; color: ${theme.textMuted}; font-weight: 400; margin-left: 2px;">(${fiveHourReset})</span>` : ""}`;
+          h5Span.style.color = color5h;
           h5Bar.style.width = `${fiveHourPct}%`;
           wSpan.innerHTML = `${weeklyPct}%${weeklyReset ? `<span style="font-size: 10px; color: ${theme.textMuted}; font-weight: 400; margin-left: 2px;">(${weeklyReset})</span>` : ""}`;
+          wSpan.style.color = colorW;
           wBar.style.width = `${weeklyPct}%`;
 
           if (detailEl) {
@@ -373,14 +392,14 @@
       container.innerHTML = `
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px; line-height: 1.2;">
           <div style="display: flex; align-items: center; gap: 5.5px; min-width: 0;">
-            <span id="agy-dot-c" style="display: inline-block; width: 6.5px; height: 6.5px; border-radius: 50%; background: ${statusColor.dot}; box-shadow: 0 0 5px ${statusColor.dot}; flex-shrink: 0;"></span>
+            <span id="agy-dot-c" style="display: inline-block; width: 6.5px; height: 6.5px; border-radius: 50%; background: ${dotColor}; box-shadow: 0 0 5px ${dotColor}; flex-shrink: 0;"></span>
             <span style="font-size: 11.5px; font-weight: 500; color: ${theme.textSecondary}; white-space: nowrap;">
-              上下文 <span id="agy-pct-c" style="font-weight: 700; color: ${statusColor.text}; font-family: ui-monospace, Menlo, Consolas, monospace;">${pct.toFixed(1)}%</span>
+              上下文 <span id="agy-pct-c" style="font-weight: 700; color: ${ctxStatus.text}; font-family: ui-monospace, Menlo, Consolas, monospace;">${pct.toFixed(1)}%</span>
             </span>
           </div>
           <div style="display: flex; align-items: center; gap: 7px; flex-shrink: 0;">
-            <span id="agy-5h-c" style="font-size: 11px; font-weight: 600; color: ${theme.c5h}; font-family: ui-monospace, Menlo, Consolas, monospace;">5h:${fiveHourPct}%</span>
-            <span id="agy-w-c" style="font-size: 11px; font-weight: 600; color: ${theme.cWeekly}; font-family: ui-monospace, Menlo, Consolas, monospace;">周:${weeklyPct}%</span>
+            <span id="agy-5h-c" style="font-size: 11px; font-weight: 600; color: ${color5h}; font-family: ui-monospace, Menlo, Consolas, monospace;">5h:${fiveHourPct}%</span>
+            <span id="agy-w-c" style="font-size: 11px; font-weight: 600; color: ${colorW}; font-family: ui-monospace, Menlo, Consolas, monospace;">周:${weeklyPct}%</span>
             <svg style="width: 11px; height: 11px; fill: none; stroke: currentColor; color: ${theme.textMuted};" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"></path>
             </svg>
@@ -412,9 +431,9 @@
       <div style="margin-bottom: 7px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3.5px; line-height: 1.2;">
           <div style="display: flex; align-items: center; gap: 5px;">
-            <span id="agy-dot-e" style="display: inline-block; width: 6.5px; height: 6.5px; border-radius: 50%; background: ${statusColor.dot}; box-shadow: 0 0 5px ${statusColor.dot}; flex-shrink: 0;"></span>
+            <span id="agy-dot-e" style="display: inline-block; width: 6.5px; height: 6.5px; border-radius: 50%; background: ${dotColor}; box-shadow: 0 0 5px ${dotColor}; flex-shrink: 0;"></span>
             <span style="font-size: 11.5px; color: ${theme.textPrimary}; font-weight: 600;">上下文</span>
-            <span id="agy-pct-e" style="font-size: 12px; font-weight: 700; color: ${statusColor.text}; font-family: ui-monospace, Menlo, Consolas, monospace;">${pct.toFixed(1)}%</span>
+            <span id="agy-pct-e" style="font-size: 12px; font-weight: 700; color: ${ctxStatus.text}; font-family: ui-monospace, Menlo, Consolas, monospace;">${pct.toFixed(1)}%</span>
             <span id="agy-counts-e" style="color: ${theme.textMuted}; font-size: 10.5px; font-family: ui-monospace, Menlo, Consolas, monospace;">(${ctxK}/${maxK})</span>
           </div>
           <div style="display: flex; align-items: center; gap: 2.5px; color: ${theme.textSecondary}; font-size: 11px; padding: 1.5px 5px; border-radius: 4px; background: ${theme.btnBg};">
@@ -436,7 +455,7 @@
         <div style="flex: 1; min-width: 0;">
           <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px; line-height: 1.2;">
             <span style="font-size: 11px; color: ${theme.textSecondary}; font-weight: 500;">5h配额</span>
-            <span id="agy-5h-e" style="font-size: 11px; font-weight: 700; color: ${theme.c5h}; font-family: ui-monospace, Menlo, Consolas, monospace;">
+            <span id="agy-5h-e" style="font-size: 11px; font-weight: 700; color: ${color5h}; font-family: ui-monospace, Menlo, Consolas, monospace;">
               ${fiveHourPct}%${fiveHourReset ? `<span style="font-size: 10px; color: ${theme.textMuted}; font-weight: 400; margin-left: 2px;">(${fiveHourReset})</span>` : ""}
             </span>
           </div>
@@ -449,7 +468,7 @@
         <div style="flex: 1; min-width: 0;">
           <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px; line-height: 1.2;">
             <span style="font-size: 11px; color: ${theme.textSecondary}; font-weight: 500;">周配额</span>
-            <span id="agy-w-e" style="font-size: 11px; font-weight: 700; color: ${theme.cWeekly}; font-family: ui-monospace, Menlo, Consolas, monospace;">
+            <span id="agy-w-e" style="font-size: 11px; font-weight: 700; color: ${colorW}; font-family: ui-monospace, Menlo, Consolas, monospace;">
               ${weeklyPct}%${weeklyReset ? `<span style="font-size: 10px; color: ${theme.textMuted}; font-weight: 400; margin-left: 2px;">(${weeklyReset})</span>` : ""}
             </span>
           </div>
