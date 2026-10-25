@@ -300,8 +300,9 @@
     if (session.context_size > 0) {
       detailTokens = `\n上下文明细: 缓存 ${fmtK(session.cached_tokens || 0)} | 输入 ${fmtK(session.prompt_tokens || 0)} | 思考 ${fmtK(session.thinking_tokens || 0)} | 输出 ${fmtK(session.output_tokens || 0)}`;
     }
+    const modelTip = session.model_name ? `当前模型: ${session.model_name}${session.provider ? ` (${session.provider})` : ""}\n` : "";
     const actionHint = isCollapsed ? "点击展开详情" : "点击收起面板";
-    container.title = `${tip5h}\n${tipWeekly}${detailTokens}\n\n(${actionHint})`;
+    container.title = `${modelTip}${tip5h}\n${tipWeekly}${detailTokens}\n\n(${actionHint})`;
 
     const stateChanged = container.__renderedCollapsed !== isCollapsed;
 

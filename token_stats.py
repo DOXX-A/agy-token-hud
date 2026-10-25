@@ -27,6 +27,8 @@ _FILE_CACHE = {}
 _LAST_METRICS = None
 _LAST_METRICS_CONV_ID = None
 _LAST_METRICS_SIGNATURE = None
+_ACTIVITY_LOGS_CACHE = {}
+_LAST_ACTIVITY_LOGS_MTIME = 0.0
 
 def get_running_wsl_distros():
     """Returns currently running WSL distros. Never wakes up sleeping WSL distros."""
@@ -163,6 +165,65 @@ def open_db_readonly(db_path):
     except Exception:
         return None, None
 
+def get_activity_sessions_meta():
+    """
+    Safely reads ~/.gemini/antigravity/activity_logs.db in readonly mode to associate each session
+    with its active model_name, provider_name and gateway status.
+    Uses incremental mtime cache to ensure 0% CPU overhead.
+    """
+    global _ACTIVITY_LOGS_CACHE, _LAST_ACTIVITY_LOGS_MTIME
+    act_path = os.path.expanduser("~/.gemini/antigravity/activity_logs.db")
+    if not os.path.exists(act_path):
+        return _ACTIVITY_LOGS_CACHE
+
+    try:
+        mtime = os.path.getmtime(act_path)
+    except OSError:
+        return _ACTIVITY_LOGS_CACHE
+
+    if _ACTIVITY_LOGS_CACHE and mtime == _LAST_ACTIVITY_LOGS_MTIME:
+        return _ACTIVITY_LOGS_CACHE
+
+    res = {}
+    conn, tmp = open_db_readonly(act_path)
+    if conn:
+        try:
+            c = conn.cursor()
+            c.execute("""
+                SELECT session_id, model_id, provider_name, model_identity_json
+                FROM activity_logs
+                WHERE session_id IS NOT NULL AND session_id != ''
+                GROUP BY session_id
+                HAVING timestamp = MAX(timestamp)
+            """)
+            for sid, model_id, provider_name, meta_json in c.fetchall():
+                display_name = model_id
+                if meta_json:
+                    try:
+                        meta = json.loads(meta_json)
+                        display_name = meta.get("display_name") or meta.get("provider_model_id") or model_id
+                    except Exception:
+                        pass
+                is_gw = any(k in str(model_id).lower() for k in ["argon", "vertex", "byok"]) or "vertex" in str(provider_name).lower()
+                res[sid] = {
+                    "model_id": model_id,
+                    "model_name": display_name,
+                    "provider": provider_name,
+                    "is_gateway": is_gw,
+                }
+        except Exception:
+            pass
+        finally:
+            try: conn.close()
+            except Exception: pass
+            if tmp and os.path.exists(tmp):
+                try: os.remove(tmp)
+                except Exception: pass
+
+    _ACTIVITY_LOGS_CACHE = res
+    _LAST_ACTIVITY_LOGS_MTIME = mtime
+    return res
+
 def parse_db_records(db_path, sess_id):
     """Parse records from a single database file."""
     conn, tmp_path = open_db_readonly(db_path)
@@ -226,7 +287,10 @@ def parse_db_records(db_path, sess_id):
                     ctx_size = s9_ctx
                     if s17_dict.get(2, 0) > 0:
                         prompt_tok = s17_dict.get(2, 0)
-                        cached_tok = max(0, s9_ctx - prompt_tok)
+                        if s17_dict.get(5, 0) > 0:
+                            cached_tok = s17_dict.get(5, 0)
+                        else:
+                            cached_tok = max(0, s9_ctx - prompt_tok)
                     else:
                         prompt_tok = s9_ctx
                         cached_tok = 0
@@ -235,18 +299,22 @@ def parse_db_records(db_path, sess_id):
                 else:
                     ctx_size = 0
 
+                real_output_tok = text_tok if text_tok > 0 else (output_tok - thinking_tok if output_tok >= thinking_tok else output_tok)
+                effective_max = 1048576 if (s9_max == 640000 or s9_max >= 1000000) else (s9_max if s9_max > 0 else 256000)
+
                 if ctx_size > 0 or output_tok > 0:
                     rec = {
                         "session_id": sess_id,
                         "idx": idx,
                         "timestamp": ts,
                         "prompt_tokens": prompt_tok,
-                        "output_tokens": output_tok,
+                        "output_tokens": real_output_tok,
+                        "total_completion_tokens": output_tok,
                         "cached_tokens": cached_tok,
                         "thinking_tokens": thinking_tok,
                         "text_tokens": text_tok,
                         "context_size": ctx_size,
-                        "max_context": s9_max if s9_max > 0 else 256000,
+                        "max_context": effective_max,
                     }
                     records.append(rec)
         except Exception:
@@ -304,6 +372,14 @@ def collect_metrics(current_conv_id=None):
     recent_sig = []
     for f in db_files[:30]:
         recent_sig.append((f, file_mtimes.get(f, 0)))
+
+    act_path = os.path.expanduser("~/.gemini/antigravity/activity_logs.db")
+    if os.path.exists(act_path):
+        try:
+            recent_sig.append(("activity_logs", os.path.getmtime(act_path)))
+        except OSError:
+            pass
+
     current_sig = tuple(recent_sig)
 
     if _LAST_METRICS and _LAST_METRICS_CONV_ID == current_conv_id and _LAST_METRICS_SIGNATURE == current_sig:
@@ -346,11 +422,23 @@ def collect_metrics(current_conv_id=None):
     h5_records = [r for r in all_records if r["timestamp"] >= h5_ts]
     w1_records = [r for r in all_records if r["timestamp"] >= w1_ts]
 
+    activity_meta = get_activity_sessions_meta()
+
     sessions_map = {}
     for r in all_records:
         sid = r["session_id"]
         ctx = r["context_size"]
         max_ctx = r.get("max_context", 256000)
+
+        meta = activity_meta.get(sid, {})
+        model_name = meta.get("model_name")
+        provider = meta.get("provider")
+        is_gw = meta.get("is_gateway", False) or (max_ctx == 640000 or max_ctx >= 1000000)
+
+        # Accurately map 1M context window for vertex-gemini-gateway / Argon models
+        if is_gw or max_ctx == 640000 or (model_name and any(k in str(model_name).lower() for k in ["argon", "gemini-4"])):
+            max_ctx = 1048576
+
         sessions_map[sid] = {
             "session_id": sid,
             "context_size": ctx,
@@ -361,6 +449,9 @@ def collect_metrics(current_conv_id=None):
             "output_tokens": r["output_tokens"],
             "thinking_tokens": r["thinking_tokens"],
             "text_tokens": r["text_tokens"],
+            "model_name": model_name,
+            "provider": provider,
+            "is_gateway": is_gw,
         }
 
     current_session = sessions_map.get(current_conv_id)
@@ -372,6 +463,9 @@ def collect_metrics(current_conv_id=None):
     current_output = current_session["output_tokens"] if current_session else 0
     current_thinking = current_session["thinking_tokens"] if current_session else 0
     current_text = current_session["text_tokens"] if current_session else 0
+    current_model = current_session.get("model_name") if current_session else None
+    current_provider = current_session.get("provider") if current_session else None
+    current_is_gw = current_session.get("is_gateway", False) if current_session else False
 
     metrics = {
         "current_session": {
@@ -384,6 +478,9 @@ def collect_metrics(current_conv_id=None):
             "output_tokens": current_output,
             "thinking_tokens": current_thinking,
             "text_tokens": current_text,
+            "model_name": current_model,
+            "provider": current_provider,
+            "is_gateway": current_is_gw,
         },
         "sessions": sessions_map,
         "usage_5h": {
