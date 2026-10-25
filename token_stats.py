@@ -300,7 +300,7 @@ def parse_db_records(db_path, sess_id):
                     ctx_size = 0
 
                 real_output_tok = text_tok if text_tok > 0 else (output_tok - thinking_tok if output_tok >= thinking_tok else output_tok)
-                effective_max = 1048576 if (s9_max == 640000 or s9_max >= 1000000) else (s9_max if s9_max > 0 else 256000)
+                effective_max = s9_max if s9_max > 0 else 256000
 
                 if ctx_size > 0 or output_tok > 0:
                     rec = {
@@ -433,11 +433,7 @@ def collect_metrics(current_conv_id=None):
         meta = activity_meta.get(sid, {})
         model_name = meta.get("model_name")
         provider = meta.get("provider")
-        is_gw = meta.get("is_gateway", False) or (max_ctx == 640000 or max_ctx >= 1000000)
-
-        # Accurately map 1M context window for vertex-gemini-gateway / Argon models
-        if is_gw or max_ctx == 640000 or (model_name and any(k in str(model_name).lower() for k in ["argon", "gemini-4"])):
-            max_ctx = 1048576
+        is_gw = meta.get("is_gateway", False) or (max_ctx != 256000)
 
         sessions_map[sid] = {
             "session_id": sid,
